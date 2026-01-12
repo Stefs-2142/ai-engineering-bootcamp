@@ -1,6 +1,4 @@
-# ai-engineering-bootcamp-prerequisites
-
-Welcome to the prerequisites repository for the [End-to-End AI Engineering Bootcamp](https://maven.com/swirl-ai/end-to-end-ai-engineering)! This repository is dedicated to setting up your development environment and scafoling a simple project with a StreamLit UI frontend service decoupled from FastAPI server.
+# ai-engineering-bootcamp-sprint-0
 
 We strongly recomend you coding along the videos available on Maven platform rather than just cloning the repository and running the code.
 
@@ -43,3 +41,15 @@ You can also find me on:
 - 🔗 [LinkedIn](https://www.linkedin.com/in/aurimas-griciunas)
 - 🔗 [X](https://x.com/Aurimas_Gr)
 - 🔗 [Newsletter](https://www.newsletter.swirlai.com/)
+
+## This repository uses data provided by the authors of the following paper.
+If you use this work, please cite:
+
+```
+@article{hou2024bridging,
+  title={Bridging Language and Items for Retrieval and Recommendation},
+  author={Hou, Yupeng and Li, Jiacheng and He, Zhankui and Yan, An and Chen, Xiusi and McAuley, Julian},
+  journal={arXiv preprint arXiv:2403.03952},
+  year={2024}
+}
+```
