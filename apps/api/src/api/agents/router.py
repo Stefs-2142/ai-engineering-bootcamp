@@ -93,7 +93,6 @@ def classify_intent(question: str) -> tuple[QueryIntent, float]:
         messages=[
             {"role": "user", "content": INTENT_CLASSIFICATION_PROMPT.format(question=question)}
         ],
-        temperature=0,
         reasoning_effort="minimal"
     )
 
@@ -134,7 +133,6 @@ def extract_filters(question: str) -> tuple[QueryFilters, str]:
         messages=[
             {"role": "user", "content": FILTER_EXTRACTION_PROMPT.format(question=question)}
         ],
-        temperature=0,
         reasoning_effort="minimal"
     )
 
