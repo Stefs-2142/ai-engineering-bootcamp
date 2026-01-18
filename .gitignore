@@ -210,3 +210,20 @@ __marimo__/
 data/
 
 qdrant_storage/
+
+
+## Claude Code
+# CLAUDE.md - keep tracked for project instructions
+
+# Swap files
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# JetBrains IDE
+.idea/
