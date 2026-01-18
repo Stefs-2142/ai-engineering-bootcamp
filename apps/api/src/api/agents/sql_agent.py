@@ -2,6 +2,7 @@
 
 import os
 import json
+import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import openai
@@ -51,11 +52,12 @@ def generate_sql_query(question: str) -> str:
 {SCHEMA_DESCRIPTION}
 
 Rules:
-1. Only generate SELECT queries (no INSERT, UPDATE, DELETE)
+1. Only generate SELECT queries (no INSERT, UPDATE, DELETE, CREATE, DROP, etc.)
 2. Always include LIMIT clause (max 50 rows)
-3. Return ONLY the SQL query, no explanations
+3. Return ONLY the SQL query - no explanations, no comments, no markdown
 4. Use ILIKE for case-insensitive text matching
 5. For product searches, always return parent_asin for linking with vector search
+6. Do not include any comments (no -- or /* */) in the SQL
 
 User question: {question}
 
@@ -64,7 +66,6 @@ SQL Query:"""
     response = openai.chat.completions.create(
         model="gpt-5-nano",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0,
         reasoning_effort="minimal"
     )
 
@@ -99,9 +100,13 @@ def execute_sql_query(sql: str) -> list[dict]:
     if not sql_upper.startswith("SELECT"):
         raise ValueError("Only SELECT queries are allowed")
 
+    # Check for forbidden SQL operations at statement start (after ; or at line start)
+    # This prevents false positives like "created_at" while blocking actual SQL commands
     forbidden = ["INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE"]
     for word in forbidden:
-        if word in sql_upper:
+        # Check if forbidden word appears as a SQL command at statement boundaries
+        pattern = r'(^|;)\s*' + word + r'\b'
+        if re.search(pattern, sql_upper):
             raise ValueError(f"Forbidden SQL operation: {word}")
 
     conn = get_db_connection()
