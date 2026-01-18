@@ -10,6 +10,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./apps/chatbot_ui/src:/app/apps/chatbot_ui/src
+    depends_on:
+      - api
 
   api:
     build:
@@ -22,6 +24,11 @@ services:
     restart: unless-stopped
     volumes:
       - ./apps/api/src:/app/apps/api/src
+    depends_on:
+      qdrant:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   qdrant:
     image: qdrant/qdrant
@@ -31,3 +38,20 @@ services:
     volumes:
       - ./qdrant_storage:/qdrant/storage:z
     restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: amazon_products
+      POSTGRES_USER: bootcamp
+      POSTGRES_PASSWORD: bootcamp
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bootcamp -d amazon_products"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

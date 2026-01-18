@@ -208,8 +208,10 @@ __marimo__/
 
 
 data/
+*.jsonl.gz
 
 qdrant_storage/
+postgres_data/
 
 
 ## Claude Code

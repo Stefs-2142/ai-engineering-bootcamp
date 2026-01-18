@@ -18,6 +18,27 @@ This is a **uv workspace** monorepo with three main components:
 
 ### Key Components
 
+**Hybrid RAG + SQL Agent Architecture**:
+```
+┌─────────────────┐    ┌─────────────────────────────────────┐
+│   Streamlit UI  │ -> │         Router Agent                │
+│   (Chat)        │    │   (LangGraph - intent detection)    │
+└─────────────────┘    └─────────────────────────────────────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    v                 v                 v
+            ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+            │  RAG Tool    │  │  SQL Tool    │  │  Hybrid Tool │
+            │  (Qdrant)    │  │  (Postgres)  │  │  (SQL→RAG)   │
+            └──────────────┘  └──────────────┘  └──────────────┘
+```
+
+**Agent Modules** (`apps/api/src/api/agents/`):
+- `retrieval_generation.py` - Pure semantic RAG pipeline with Qdrant
+- `sql_agent.py` - SQL query generation and execution for structured data
+- `hybrid.py` - Combined SQL filtering + RAG semantic search
+- `router.py` - LangGraph-based intent classification (RAG/SQL/Hybrid)
+
 **RAG Pipeline** (`apps/api/src/api/agents/retrieval_generation.py`):
 - Vector-based retrieval using Qdrant with OpenAI embeddings (text-embedding-3-small)
 - LLM generation using OpenAI's gpt-5-nano with reasoning capabilities
@@ -27,17 +48,20 @@ This is a **uv workspace** monorepo with three main components:
 
 **API Service** (`apps/api/`):
 - FastAPI application with CORS middleware and request ID tracking
-- POST `/rag` endpoint for chat queries
-- Connected to local Qdrant instance (http://localhost:6333)
-- All API keys managed via environment variables
+- POST `/chat` - Smart endpoint with auto-routing to RAG/SQL/Hybrid
+- POST `/rag` - Direct RAG pipeline access
+- POST `/sql` - Direct SQL query access
+- Connected to local Qdrant instance (http://localhost:6333) and PostgreSQL
 
 **UI Service** (`apps/chatbot_ui/`):
-- Streamlit chat interface calling the API backend
+- Streamlit chat interface calling the smart `/chat` endpoint
+- Shows intent detection badges (Semantic Search / SQL Query / Hybrid)
+- Displays extracted filters for hybrid queries
 - Session-based message history
-- Error handling with popup notifications
 
 **Services Stack**:
 - Qdrant vector database (ports 6333, 6334) with persistent storage in `./qdrant_storage`
+- PostgreSQL database (port 5432) with persistent storage in `./postgres_data`
 - FastAPI on port 8000
 - Streamlit on port 8501
 
@@ -55,13 +79,26 @@ cp env.example .env
 
 ### Running the Application
 ```bash
-# Start all services (Qdrant, API, Streamlit)
+# Start all services (Qdrant, PostgreSQL, API, Streamlit)
 make run-docker-compose
 
 # Access points:
 # - Streamlit UI: http://localhost:8501
 # - FastAPI docs: http://localhost:8000/docs
 # - Qdrant: http://localhost:6333
+# - PostgreSQL: localhost:5432
+
+# After first run, load data into PostgreSQL:
+make run-etl-postgres
+```
+
+### PostgreSQL Commands
+```bash
+# Open PostgreSQL shell
+make postgres-shell
+
+# Check product count in database
+make postgres-count
 ```
 
 ### Evaluation
@@ -89,6 +126,13 @@ Required in `.env`:
 - `LANGCHAIN_API_KEY` - For LangSmith tracing (automatically used if present)
 - `LANGCHAIN_TRACING_V2` - Enable LangSmith tracing
 - `LANGCHAIN_PROJECT` - LangSmith project name
+
+PostgreSQL (auto-configured in docker-compose, override for local development):
+- `POSTGRES_HOST` - PostgreSQL host (default: postgres in docker, localhost locally)
+- `POSTGRES_PORT` - PostgreSQL port (default: 5432)
+- `POSTGRES_DB` - Database name (default: amazon_products)
+- `POSTGRES_USER` - Database user (default: bootcamp)
+- `POSTGRES_PASSWORD` - Database password (default: bootcamp)
 
 ## Python Version & Package Manager
 
