@@ -2,6 +2,22 @@ import openai
 from qdrant_client import QdrantClient
 from langsmith import traceable, get_current_run_tree
 
+import instructor
+
+import numpy as np
+
+from qdrant_client.models import Filter, FieldCondition, MatchValue, Prefetch, FusionQuery, Document
+from api.api.models import RAGResponse
+from pydantic import BaseModel, Field
+
+
+class RAGUsedContext(BaseModel):
+    id: str = Field(description="The ID of the item used to answer the question")
+    description: str = Field(description="Short description of the item used to answer the question")
+
+class RAGGenerationResponse(BaseModel):
+    answer: str = Field(description="The answer to the question")
+    references: list[RAGUsedContext] = Field(description="List of items used to answer the question")
 
 @traceable(
     name="embed_query",
@@ -34,8 +50,22 @@ def retrieve_data(query, qdrant_client, k=5):
     query_embedding = get_embedding(query)
 
     results = qdrant_client.query_points(
-        collection_name="Amazon-items-collection-00",
-        query=query_embedding,
+        collection_name="Amazon-items-collection-01-hybrid-search",
+        prefetch=[
+            Prefetch(
+                query=query_embedding,
+                using="text-embedding-3-small",
+                limit=20),
+            Prefetch(
+                query=Document(
+                    text=query,
+                    model="qdrant/bm25"
+                ),
+                using="bm25",
+                limit=20
+            )
+        ],
+        query=FusionQuery(fusion='rrf'),
         limit=k,
     )
 
@@ -83,9 +113,16 @@ You are a shopping assistant that can answer questions about the products in sto
 
 You will be given a question and a list of context.
 
-Instructtions:
+Instructions:
 - You need to answer the question based on the provided context only.
 - Never use word context and refer to it as the available products.
+- As an output you need to provide:
+    * The answer to the question based on the provided context.
+    * The list of the IDs of the chunks that were used to answer the question. Only return the ones that are used in the answer.
+    * Short description (1-2 sentences) of the item based on the description provided in the context.
+
+- The short description should have the name of the item.
+- The answer to the question should contain detailed information about the product and returned with detailed specification in bullet points.
 
 Context:
 {preprocessed_context}
@@ -100,26 +137,29 @@ Question:
 @traceable(
     name="generate_answer",
     run_type="llm",
-    metadata={"ls_provider": "openai", "ls_model_name": "gpt-5-nano"}
+    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1-mini"}
 )
 def generate_answer(prompt):
 
-    response = openai.chat.completions.create(
-        model="gpt-5-nano",
+    client = instructor.from_openai(openai.OpenAI())
+
+    response, raw_response = client.chat.completions.create_with_completion(
+        model="gpt-4.1-mini",
         messages=[{"role": "system", "content": prompt}],
-        reasoning_effort="minimal"
+        temperature=0,
+        response_model=RAGGenerationResponse
     )
 
     current_run = get_current_run_tree()
     
     if current_run:
         current_run.metadata["usage_metadata"] = {
-            "input_tokens": response.usage.prompt_tokens,
-            "output_tokens": response.usage.completion_tokens,
-            "total_tokens": response.usage.total_tokens
+            "input_tokens": raw_response.usage.prompt_tokens,
+            "output_tokens": raw_response.usage.completion_tokens,
+            "total_tokens": raw_response.usage.total_tokens
         }
 
-    return response.choices[0].message.content
+    return response
 
 
 @traceable(
@@ -133,7 +173,8 @@ def rag_pipeline(question, qdrant_client, top_k=5):
     answer = generate_answer(prompt)
 
     final_result = {
-        "answer": answer,
+        "answer": answer.answer,
+        "references": answer.references,
         "question": question,
         "retrieved_context_ids": retrieved_context["retrieved_context_ids"],
         "retrieved_context": retrieved_context["retrieved_context"],
@@ -141,3 +182,38 @@ def rag_pipeline(question, qdrant_client, top_k=5):
     }
 
     return final_result
+
+
+def rag_pipeline_wrapper(question, top_k=5):
+    qdrant_client = QdrantClient(url="http://qdrant:6333")
+    result = rag_pipeline(question, qdrant_client, top_k)
+
+    used_context  = []
+    dummy_vector = np.zeros(1536).tolist()
+
+    for item in result.get("references", []):
+        payload = qdrant_client.query_points(
+            collection_name="Amazon-items-collection-01-hybrid-search",
+            query=dummy_vector,
+            limit=1,
+            using="text-embedding-3-small",
+            with_payload=True,
+            query_filter=Filter(
+                must=[
+                    FieldCondition(key="parent_asin", match=MatchValue(value=item.id))
+                ]
+            )
+        ).points[0].payload
+        image_url = payload.get("image", "")
+        price = payload.get("price", "")
+        if image_url:
+            used_context.append({
+                "image_url": image_url,
+                "price": price,
+                "description": item.description
+            })
+
+    return {
+        "answer": result.get("answer", ""),
+        "used_context": used_context,
+    }

@@ -2,15 +2,11 @@ import streamlit as st
 import requests
 from chatbot_ui.core.config import config
 
-
 st.set_page_config(
-    page_title="Amazon Product Assistant",
-    page_icon="🛒",
-    layout="centered"
+    page_title="Ecommerce Assistant",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
-
-st.title("Amazon Product Assistant")
-st.caption("Hybrid RAG + SQL Agent - Ask about products, prices, ratings, and more!")
 
 
 def api_call(method, url, **kwargs):
@@ -46,83 +42,49 @@ def api_call(method, url, **kwargs):
         return False, {"message": str(e)}
 
 
-# Intent badge styling
-INTENT_BADGES = {
-    "rag": ("Semantic Search", "blue"),
-    "sql": ("SQL Query", "green"),
-    "hybrid": ("Hybrid Filter+Search", "orange")
-}
-
-
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "assistant",
-            "content": "Hello! I'm your Amazon Product Assistant. I can help you:\n\n"
-                       "- **Find products** by description (\"wireless earbuds for running\")\n"
-                       "- **Query data** with filters (\"how many products cost over $100\")\n"
-                       "- **Hybrid search** (\"best headphones under $50 with good bass\")\n\n"
-                       "What are you looking for today?",
-            "intent": None
-        }
-    ]
-
+    st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you today?"}]
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        # Show intent badge for assistant messages
-        if message["role"] == "assistant" and message.get("intent"):
-            intent = message["intent"]
-            label, color = INTENT_BADGES.get(intent, (intent, "gray"))
-            st.caption(f":{color}[{label}]")
         st.markdown(message["content"])
 
 
-if prompt := st.chat_input("Ask about products, prices, ratings..."):
+if "used_context" not in st.session_state:
+    st.session_state.used_context = []
+
+
+with st.sidebar:
+    # Create tabs in the sidebar
+    suggestions_tab, = st.tabs(["🔍 Suggestions"])
+    
+    # Suggestions Tab
+    with suggestions_tab:
+        if st.session_state.used_context:
+            for idx, item in enumerate(st.session_state.used_context):
+                st.caption(item.get('description', 'No description'))
+                if 'image_url' in item:
+                    st.image(item["image_url"], width=250)
+                st.caption(f"Price: {item['price']} USD")
+                st.divider()
+        else:
+            st.info("No suggestions yet")
+
+
+if prompt := st.chat_input("Hello! How can I assist you today?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            # Use smart /chat endpoint
-            success, response_data = api_call(
-                "post",
-                f"{config.API_URL}/chat",
-                json={"query": prompt}
-            )
+        status, output = api_call("post", f"{config.API_URL}/rag", json={"query": prompt})
 
-            if success:
-                answer = response_data.get("answer", "No response")
-                intent = response_data.get("intent", "rag")
+        answer = output["answer"]
+        used_context = output["used_context"]
 
-                # Show intent badge
-                label, color = INTENT_BADGES.get(intent, (intent, "gray"))
-                st.caption(f":{color}[{label}]")
+        st.session_state.used_context = used_context
 
-                # Show filters if present
-                filters = response_data.get("filters")
-                if filters and any(v is not None for v in filters.values()):
-                    filter_parts = []
-                    if filters.get("min_price"):
-                        filter_parts.append(f"min ${filters['min_price']}")
-                    if filters.get("max_price"):
-                        filter_parts.append(f"max ${filters['max_price']}")
-                    if filters.get("min_rating"):
-                        filter_parts.append(f"rating {filters['min_rating']}+")
-                    if filters.get("category"):
-                        filter_parts.append(f"category: {filters['category']}")
-                    if filter_parts:
-                        st.caption(f"Filters: {', '.join(filter_parts)}")
+        st.write(answer)
 
-                st.markdown(answer)
-            else:
-                answer = f"Error: {response_data.get('message', 'Unknown error')}"
-                intent = None
-                st.error(answer)
-
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": answer,
-        "intent": intent
-    })
+    st.session_state.messages.append({"role": "assistant", "content": answer})
+    st.rerun()
